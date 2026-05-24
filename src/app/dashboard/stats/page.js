@@ -4,6 +4,144 @@ import { useSearchParams } from "next/navigation";
 import { StatCard, Avatar, StatusBadge, ScoreStars } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 
+/* ── สร้าง HTML รายงานในหน้าต่างใหม่ ── */
+function openPrintWindow(data, mode, month, term, from, to) {
+  if (!data?.teacher || !data?.summary) return;
+  const s = data.summary;
+  const t = data.teacher;
+
+  const periodLabel =
+    mode === "all"    ? "ทุกช่วงเวลา"
+    : mode === "month"  ? `เดือน ${month}`
+    : mode === "term"   ? `เทอม ${term}`
+    : `${from || "..."} ถึง ${to || "..."}`;
+
+  const statusLabel = { pending: "รอส่ง", submitted: "ส่งแล้ว", late: "ส่งช้า" };
+
+  const rows = data.tasks.map((task) => `
+    <tr>
+      <td>${task.title}</td>
+      <td class="center">${statusLabel[task.status] ?? task.status}</td>
+      <td class="center">${task.progress ?? 0}%</td>
+      <td class="center">${task.score != null ? task.score : "-"}</td>
+      <td class="center">${task.due_date ? new Date(task.due_date).toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" }) : "-"}</td>
+    </tr>
+  `).join("");
+
+  const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8"/>
+  <title>รายงานสถิติ – ${t.full_name}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Sarabun", sans-serif; font-size: 13px; color: #1f2433; background: white; padding: 32px; }
+
+    /* Header */
+    .report-header { border-bottom: 2px solid #3361f6; padding-bottom: 12px; margin-bottom: 20px; }
+    .report-header h1 { font-size: 20px; font-weight: 700; color: #1f43eb; }
+    .report-header p  { font-size: 12px; color: #637191; margin-top: 2px; }
+
+    /* Teacher info */
+    .teacher-row { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .avatar { width: 44px; height: 44px; border-radius: 50%; background: #3361f6; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex-shrink: 0; }
+    .teacher-name { font-size: 16px; font-weight: 700; }
+    .teacher-sub  { font-size: 12px; color: #637191; }
+
+    /* Stat grid */
+    .stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
+    .stat-box  { border: 1px solid #eceef2; border-radius: 10px; padding: 12px 14px; }
+    .stat-label{ font-size: 11px; color: #637191; margin-bottom: 4px; }
+    .stat-val  { font-size: 22px; font-weight: 700; }
+    .c-brand   { color: #1f43eb; }
+    .c-emerald { color: #059669; }
+    .c-rose    { color: #dc2626; }
+    .c-amber   { color: #d97706; }
+
+    /* Rate bar */
+    .rate-box  { border: 1px solid #eceef2; border-radius: 10px; padding: 12px 14px; margin-bottom: 20px; display: flex; align-items: center; gap: 14px; }
+    .rate-label{ font-size: 12px; color: #637191; white-space: nowrap; }
+    .rate-track{ flex: 1; height: 8px; background: #eceef2; border-radius: 999px; overflow: hidden; }
+    .rate-fill { height: 100%; background: #059669; border-radius: 999px; }
+    .rate-pct  { font-size: 15px; font-weight: 700; color: #059669; white-space: nowrap; }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th { background: #f6f7f9; padding: 8px 12px; text-align: left; font-weight: 600; color: #637191; border-bottom: 1px solid #d4d9e3; }
+    tbody td { padding: 8px 12px; border-bottom: 1px solid #eceef2; vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: none; }
+    .center { text-align: center; }
+    .table-wrap { border: 1px solid #eceef2; border-radius: 10px; overflow: hidden; }
+    .table-title { padding: 10px 14px; font-weight: 700; border-bottom: 1px solid #eceef2; background: #fafafa; }
+
+    /* Footer */
+    .footer { margin-top: 28px; font-size: 11px; color: #aeb7ca; text-align: right; border-top: 1px solid #eceef2; padding-top: 10px; }
+
+    @media print {
+      body { padding: 0; }
+      @page { margin: 1.5cm; size: A4; }
+    }
+  </style>
+</head>
+<body>
+  <div class="report-header">
+    <h1>รายงานสถิติการส่งงานอาจารย์</h1>
+    <p>แผนกอุตสาหกรรมดิจิทัลและเทคโนโลยีสารสนเทศ &nbsp;·&nbsp; วิทยาลัยเทคโนโลยีสันตพล</p>
+  </div>
+
+  <div class="teacher-row">
+    <div class="avatar">${t.full_name?.trim().slice(-2) ?? "??"}</div>
+    <div>
+      <div class="teacher-name">${t.full_name}</div>
+      <div class="teacher-sub">ช่วงเวลา: ${periodLabel}</div>
+    </div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-box"><div class="stat-label">งานทั้งหมด</div><div class="stat-val c-brand">${s.total}</div></div>
+    <div class="stat-box"><div class="stat-label">ส่งแล้ว</div><div class="stat-val c-emerald">${s.submitted}</div></div>
+    <div class="stat-box"><div class="stat-label">ส่งช้า</div><div class="stat-val c-rose">${s.late}</div></div>
+    <div class="stat-box"><div class="stat-label">รอส่ง</div><div class="stat-val c-amber">${s.pending}</div></div>
+    <div class="stat-box"><div class="stat-label">คะแนนเฉลี่ย</div><div class="stat-val c-amber">${s.avgScore ?? "–"}<span style="font-size:13px;font-weight:400;color:#637191"> /5</span></div></div>
+  </div>
+
+  <div class="rate-box">
+    <span class="rate-label">อัตราการส่งตรงเวลา</span>
+    <div class="rate-track"><div class="rate-fill" style="width:${s.onTimeRate}%"></div></div>
+    <span class="rate-pct">${s.onTimeRate}%</span>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-title">รายการงาน (${data.tasks.length} รายการ)</div>
+    <table>
+      <thead>
+        <tr>
+          <th>ชื่องาน</th>
+          <th class="center">สถานะ</th>
+          <th class="center">คืบหน้า</th>
+          <th class="center">คะแนน</th>
+          <th class="center">กำหนดส่ง</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows || '<tr><td colspan="5" class="center" style="padding:24px;color:#aeb7ca">ไม่มีข้อมูลในช่วงเวลานี้</td></tr>'}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">พิมพ์เมื่อ ${new Date().toLocaleDateString("th-TH", { year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+
+  <script>window.onload = () => { window.print(); }<\/script>
+</body>
+</html>`;
+
+  const w = window.open("", "_blank", "width=900,height=700");
+  w.document.write(html);
+  w.document.close();
+}
+
 function StatsInner() {
   const params = useSearchParams();
   const [teachers, setTeachers] = useState([]);
@@ -51,7 +189,13 @@ function StatsInner() {
           <h1 className="font-display text-2xl font-bold text-ink-900">สถิติรายบุคคล</h1>
           <p className="mt-1 text-sm text-ink-500">ดูสถิติการส่งงานแยกตามช่วงเวลา</p>
         </div>
-        <button onClick={() => window.print()} className="btn-ghost">🖨 พิมพ์รายงาน</button>
+        <button
+          onClick={() => openPrintWindow(data, mode, month, term, from, to)}
+          disabled={!data?.summary}
+          className="btn-ghost disabled:opacity-40"
+        >
+          🖨 พิมพ์รายงาน
+        </button>
       </div>
 
       {/* ตัวกรอง */}
