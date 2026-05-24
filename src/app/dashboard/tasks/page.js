@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { ProgressBar, StatusBadge, Avatar, ScoreStars } from "@/components/ui";
+import { useRouter } from "next/navigation";
+import { Avatar } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 
 export default function ManageTasks() {
   const [tasks, setTasks] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [showForm, setShowForm] = useState(false);
-  const [expanded, setExpanded] = useState(null);
+  const router = useRouter();
 
   async function load() {
     const [tRes, uRes] = await Promise.all([
@@ -18,12 +19,6 @@ export default function ManageTasks() {
     setTeachers((uRes.users || []).filter((u) => ["teacher", "head"].includes(u.role) && u.is_active));
   }
   useEffect(() => { load(); }, []);
-
-  async function deleteTask(id) {
-    if (!confirm("ลบงานนี้และข้อมูลการมอบหมายทั้งหมด?")) return;
-    await fetch(`/api/tasks/${id}`, { method: "DELETE" });
-    load();
-  }
 
   return (
     <div>
@@ -43,68 +38,84 @@ export default function ManageTasks() {
         />
       )}
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         {tasks.length === 0 && (
           <div className="card p-12 text-center text-ink-400">ยังไม่มีงาน คลิก "โพสต์งานใหม่" เพื่อเริ่ม</div>
         )}
         {tasks.map((t) => (
-          <div key={t.id} className="card overflow-hidden">
-            <div className="p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-display text-lg font-semibold text-ink-900">{t.title}</h3>
-                  {t.description && <p className="mt-1 text-sm text-ink-600">{t.description}</p>}
-
-                  {/* attachment */}
-                  {t.attachment_url && (
-                    <a
-                      href={t.attachment_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-100 transition-colors"
-                    >
-                      📎 {t.attachment_name || "เปิดไฟล์/ลิ้งค์"}
-                    </a>
-                  )}
-
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-400">
-                    {t.start_date && <span>เริ่ม: {formatDate(t.start_date)}</span>}
-                    {t.end_date && <span>สิ้นสุด: {formatDate(t.end_date)}</span>}
-                    {!t.start_date && !t.end_date && t.due_date && <span>กำหนดส่ง: {formatDate(t.due_date)}</span>}
-                    {t.term && <span>เทอม: {t.term}</span>}
-                    <span>โพสต์: {formatDate(t.created_at)}</span>
-                    <span className="font-medium text-ink-600">จำนวนงาน: {t.total_parts} ส่วน</span>
-                  </div>
-                </div>
-                <button onClick={() => deleteTask(t.id)} className="text-xs text-rose-500 hover:underline">ลบ</button>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                <span className="badge bg-emerald-50 text-emerald-700 ring-emerald-600/20">ส่งแล้ว {t.submitted}</span>
-                <span className="badge bg-rose-50 text-rose-700 ring-rose-600/20">ส่งช้า {t.late}</span>
-                <span className="badge bg-amber-50 text-amber-700 ring-amber-600/20">รอส่ง {t.pending}</span>
-                <span className="badge bg-ink-100 text-ink-600 ring-ink-600/10">ทั้งหมด {t.total} คน</span>
-              </div>
-
-              <button
-                onClick={() => setExpanded(expanded === t.id ? null : t.id)}
-                className="mt-3 text-sm text-brand-600 hover:underline"
-              >
-                {expanded === t.id ? "ซ่อนรายชื่อ ▲" : "จัดการรายบุคคล ▼"}
-              </button>
-            </div>
-
-            {expanded === t.id && (
-              <TaskAssignments taskId={t.id} totalParts={t.total_parts || 1} onChange={load} />
-            )}
-          </div>
+          <TaskCard key={t.id} task={t} onClick={() => router.push(`/dashboard/tasks/${t.id}`)} />
         ))}
       </div>
     </div>
   );
 }
 
-/* ───────────── ฟอร์มโพสต์งานใหม่ ───────────── */
+/* ─── Task summary card ─── */
+function TaskCard({ task: t, onClick }) {
+  const deadline = t.end_date || t.due_date;
+  const isOverdue = deadline && new Date() > new Date(deadline);
+  const submitPct = t.total > 0 ? Math.round(((t.submitted + t.late) / t.total) * 100) : 0;
+
+  return (
+    <div
+      onClick={onClick}
+      className="card group cursor-pointer p-5 transition-all hover:shadow-md hover:ring-2 hover:ring-brand-200 active:scale-[0.99]"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="font-display text-lg font-semibold text-ink-900 group-hover:text-brand-700 transition-colors">
+              {t.title}
+            </h3>
+            {t.attachment_url && (
+              <span className="rounded-md bg-brand-50 px-1.5 py-0.5 text-xs text-brand-600">📎</span>
+            )}
+          </div>
+          {t.description && (
+            <p className="mt-0.5 line-clamp-1 text-sm text-ink-500">{t.description}</p>
+          )}
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-400">
+            {t.start_date && <span>เริ่ม: {formatDate(t.start_date)}</span>}
+            {deadline && (
+              <span className={isOverdue ? "font-semibold text-rose-500" : ""}>
+                สิ้นสุด: {formatDate(deadline)}{isOverdue ? " ⚠️" : ""}
+              </span>
+            )}
+            {t.term && <span>เทอม: {t.term}</span>}
+            <span>จำนวน: {t.total_parts || 1} ส่วน</span>
+            <span>โพสต์: {formatDate(t.created_at)}</span>
+          </div>
+        </div>
+        <span className="text-xs text-brand-500 group-hover:text-brand-700 transition-colors">ดูรายละเอียด →</span>
+      </div>
+
+      {/* progress bar รวม */}
+      <div className="mt-4">
+        <div className="mb-1.5 flex items-center justify-between text-xs text-ink-400">
+          <div className="flex gap-3">
+            <span className="text-emerald-600 font-medium">ส่งแล้ว {t.submitted}</span>
+            <span className="text-rose-500 font-medium">ส่งช้า {t.late}</span>
+            <span className="text-amber-500 font-medium">รอ {t.pending}</span>
+          </div>
+          <span>{submitPct}% ({t.submitted + t.late}/{t.total} คน)</span>
+        </div>
+        {/* multi-color bar */}
+        <div className="h-2 w-full overflow-hidden rounded-full bg-ink-100">
+          {t.total > 0 && (
+            <div className="flex h-full">
+              <div className="bg-emerald-500 transition-all" style={{ width: `${(t.submitted / t.total) * 100}%` }} />
+              <div className="bg-rose-400 transition-all" style={{ width: `${(t.late / t.total) * 100}%` }} />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────
+   ฟอร์มโพสต์งานใหม่
+───────────────────────────────────────── */
 function NewTaskForm({ teachers, onClose, onDone }) {
   const [f, setF] = useState({
     title: "", description: "",
@@ -112,7 +123,7 @@ function NewTaskForm({ teachers, onClose, onDone }) {
     term: "1/2568",
     total_parts: 1,
     target: "all",
-    attach_type: "none", // "none" | "url" | "file"
+    attach_type: "none",
     attachment_url: "",
     attachment_name: "",
   });
@@ -128,39 +139,34 @@ function NewTaskForm({ teachers, onClose, onDone }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      setF((prev) => ({
-        ...prev,
-        attachment_url: ev.target.result,
-        attachment_name: file.name,
-      }));
-    };
+    reader.onload = (ev) =>
+      setF((prev) => ({ ...prev, attachment_url: ev.target.result, attachment_name: file.name }));
     reader.readAsDataURL(file);
   }
 
   async function save() {
     setSaving(true);
-    const body = {
-      title: f.title,
-      description: f.description,
-      start_date: f.start_date || undefined,
-      end_date: f.end_date || undefined,
-      term: f.term,
-      total_parts: Number(f.total_parts),
-      target: f.target,
-      teacher_ids: f.target === "some" ? selected : undefined,
-      attachment_url: f.attach_type !== "none" ? f.attachment_url || undefined : undefined,
-      attachment_name: f.attach_type !== "none" ? f.attachment_name || undefined : undefined,
-    };
     await fetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        title: f.title,
+        description: f.description,
+        start_date: f.start_date || undefined,
+        end_date: f.end_date || undefined,
+        term: f.term,
+        total_parts: Number(f.total_parts),
+        target: f.target,
+        teacher_ids: f.target === "some" ? selected : undefined,
+        attachment_url: f.attach_type !== "none" ? f.attachment_url || undefined : undefined,
+        attachment_name: f.attach_type !== "none" ? f.attachment_name || undefined : undefined,
+      }),
     });
     onDone();
   }
 
-  const canSave = f.title.trim() &&
+  const canSave =
+    f.title.trim() &&
     (f.target === "all" || selected.length > 0) &&
     (f.attach_type === "none" || f.attachment_url);
 
@@ -170,7 +176,6 @@ function NewTaskForm({ teachers, onClose, onDone }) {
         <h2 className="font-display text-xl font-bold text-ink-900">โพสต์งานใหม่</h2>
 
         <div className="mt-4 space-y-4">
-          {/* ชื่องาน */}
           <div>
             <label className="label">ชื่องาน *</label>
             <input className="input" value={f.title}
@@ -178,7 +183,6 @@ function NewTaskForm({ teachers, onClose, onDone }) {
               placeholder="เช่น ส่งแผนการสอนภาคเรียนที่ 1" />
           </div>
 
-          {/* รายละเอียด */}
           <div>
             <label className="label">รายละเอียด</label>
             <textarea className="input" rows={3} value={f.description}
@@ -186,7 +190,6 @@ function NewTaskForm({ teachers, onClose, onDone }) {
               placeholder="คำอธิบายเพิ่มเติม (ถ้ามี)" />
           </div>
 
-          {/* วันที่เริ่ม - วันที่สิ้นสุด */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">วันที่เริ่ม</label>
@@ -195,13 +198,11 @@ function NewTaskForm({ teachers, onClose, onDone }) {
             </div>
             <div>
               <label className="label">วันที่สิ้นสุด</label>
-              <input type="date" className="input" value={f.end_date}
-                min={f.start_date}
+              <input type="date" className="input" value={f.end_date} min={f.start_date}
                 onChange={(e) => setF({ ...f, end_date: e.target.value })} />
             </div>
           </div>
 
-          {/* เทอม + จำนวนส่วน */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">เทอม</label>
@@ -220,56 +221,35 @@ function NewTaskForm({ teachers, onClose, onDone }) {
             <label className="label">แนบไฟล์หรือลิ้งค์</label>
             <div className="flex gap-2">
               {["none", "url", "file"].map((t) => (
-                <button
-                  key={t}
-                  type="button"
+                <button key={t} type="button"
                   onClick={() => setF({ ...f, attach_type: t, attachment_url: "", attachment_name: "" })}
                   className={`flex-1 rounded-xl border px-3 py-2 text-sm transition-colors ${
                     f.attach_type === t
                       ? "border-brand-500 bg-brand-50 text-brand-700"
                       : "border-ink-200 text-ink-600 hover:bg-ink-50"
-                  }`}
-                >
+                  }`}>
                   {t === "none" ? "ไม่มี" : t === "url" ? "🔗 ลิ้งค์" : "📄 PDF"}
                 </button>
               ))}
             </div>
-
             {f.attach_type === "url" && (
-              <div className="mt-2">
-                <input
-                  className="input"
-                  placeholder="https://drive.google.com/..."
+              <div className="mt-2 space-y-2">
+                <input className="input" placeholder="https://drive.google.com/..."
                   value={f.attachment_url}
                   onChange={(e) => setF({
-                    ...f,
-                    attachment_url: e.target.value,
+                    ...f, attachment_url: e.target.value,
                     attachment_name: f.attachment_name || e.target.value.split("/").pop() || "ลิ้งค์",
-                  })}
-                />
-                <input
-                  className="input mt-2"
-                  placeholder="ชื่อที่แสดง (เช่น เอกสารแนบ)"
+                  })} />
+                <input className="input" placeholder="ชื่อที่แสดง (เช่น เอกสารแนบ)"
                   value={f.attachment_name}
-                  onChange={(e) => setF({ ...f, attachment_name: e.target.value })}
-                />
+                  onChange={(e) => setF({ ...f, attachment_name: e.target.value })} />
               </div>
             )}
-
             {f.attach_type === "file" && (
               <div className="mt-2">
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="application/pdf"
-                  className="hidden"
-                  onChange={handleFile}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileRef.current?.click()}
-                  className="w-full rounded-xl border-2 border-dashed border-ink-200 py-4 text-sm text-ink-500 hover:border-brand-400 hover:text-brand-600 transition-colors"
-                >
+                <input ref={fileRef} type="file" accept="application/pdf" className="hidden" onChange={handleFile} />
+                <button type="button" onClick={() => fileRef.current?.click()}
+                  className="w-full rounded-xl border-2 border-dashed border-ink-200 py-4 text-sm text-ink-500 hover:border-brand-400 hover:text-brand-600 transition-colors">
                   {f.attachment_name
                     ? <span className="flex items-center justify-center gap-2">📄 <span className="font-medium text-ink-800">{f.attachment_name}</span></span>
                     : "คลิกเพื่อเลือกไฟล์ PDF"}
@@ -278,22 +258,18 @@ function NewTaskForm({ teachers, onClose, onDone }) {
             )}
           </div>
 
-          {/* มอบหมายให้ */}
+          {/* มอบหมาย */}
           <div>
             <label className="label">มอบหมายให้</label>
             <div className="flex gap-2">
-              <button type="button" onClick={() => setF({ ...f, target: "all" })}
-                className={`flex-1 rounded-xl border px-3 py-2 text-sm transition-colors ${
-                  f.target === "all" ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 hover:bg-ink-50"
-                }`}>
-                ทุกคน
-              </button>
-              <button type="button" onClick={() => setF({ ...f, target: "some" })}
-                className={`flex-1 rounded-xl border px-3 py-2 text-sm transition-colors ${
-                  f.target === "some" ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 hover:bg-ink-50"
-                }`}>
-                เลือกรายคน
-              </button>
+              {["all", "some"].map((t) => (
+                <button key={t} type="button" onClick={() => setF({ ...f, target: t })}
+                  className={`flex-1 rounded-xl border px-3 py-2 text-sm transition-colors ${
+                    f.target === t ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 hover:bg-ink-50"
+                  }`}>
+                  {t === "all" ? "ทุกคน" : "เลือกรายคน"}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -316,132 +292,6 @@ function NewTaskForm({ teachers, onClose, onDone }) {
           <button onClick={save} disabled={saving || !canSave} className="btn-primary">
             {saving ? "กำลังบันทึก..." : "โพสต์งาน"}
           </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ───────────── รายชื่อผู้รับมอบหมาย + slider progress ───────────── */
-function TaskAssignments({ taskId, totalParts, onChange }) {
-  const [assignments, setAssignments] = useState([]);
-
-  async function load() {
-    const data = await fetch(`/api/tasks/${taskId}`).then((r) => r.json());
-    setAssignments(data.assignments || []);
-  }
-  useEffect(() => { load(); }, [taskId]);
-
-  async function patch(id, body) {
-    await fetch(`/api/assignments/${id}`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    load();
-    onChange?.();
-  }
-
-  return (
-    <div className="border-t border-ink-100 bg-ink-50/50 p-5">
-      <div className="space-y-3">
-        {assignments.map((a) => (
-          <AssignmentCard
-            key={a.id}
-            a={a}
-            totalParts={totalParts}
-            onPatch={(body) => patch(a.id, body)}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function AssignmentCard({ a, totalParts, onPatch }) {
-  const current = a.current_parts ?? Math.round((a.progress / 100) * totalParts);
-  const pct = totalParts > 0 ? Math.round((current / totalParts) * 100) : 0;
-
-  function handleSlider(e) {
-    onPatch({ current_parts: Number(e.target.value) });
-  }
-
-  return (
-    <div className="card p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <Avatar name={a.full_name} color={a.avatar_color} />
-        <div className="min-w-0 flex-1">
-          <div className="font-medium text-ink-900">{a.full_name}</div>
-          <StatusBadge status={a.status} />
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        {/* ── Progress slider ── */}
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs text-ink-500">ความคืบหน้า</span>
-            <span className="text-sm font-semibold text-ink-800">
-              {current}
-              <span className="text-xs font-normal text-ink-400">/{totalParts}</span>
-              <span className="ml-2 text-xs text-ink-400">({pct}%)</span>
-            </span>
-          </div>
-
-          {/* track + fill */}
-          <div className="relative mb-3">
-            <ProgressBar value={pct} />
-          </div>
-
-          {/* slider */}
-          <input
-            type="range"
-            min={0}
-            max={totalParts}
-            value={current}
-            onChange={handleSlider}
-            className="slider-thumb w-full cursor-pointer accent-brand-600"
-            style={{ accentColor: "#3361f6" }}
-          />
-
-          {/* quick buttons */}
-          <div className="mt-2 flex gap-1.5">
-            <button
-              onClick={() => onPatch({ current_parts: Math.max(0, current - 1) })}
-              disabled={current === 0}
-              className="rounded-lg bg-ink-100 px-3 py-1 text-sm hover:bg-ink-200 disabled:opacity-40"
-            >−1</button>
-            <button
-              onClick={() => onPatch({ current_parts: Math.min(totalParts, current + 1) })}
-              disabled={current === totalParts}
-              className="rounded-lg bg-brand-100 px-3 py-1 text-sm text-brand-700 hover:bg-brand-200 disabled:opacity-40"
-            >+1</button>
-            <button
-              onClick={() => onPatch({ current_parts: totalParts })}
-              disabled={current === totalParts}
-              className="rounded-lg bg-emerald-100 px-3 py-1 text-sm text-emerald-700 hover:bg-emerald-200 disabled:opacity-40"
-            >ครบ ✓</button>
-            <button
-              onClick={() => onPatch({ current_parts: 0 })}
-              disabled={current === 0}
-              className="ml-auto rounded-lg bg-ink-50 px-2 py-1 text-xs text-ink-400 hover:bg-ink-100 disabled:opacity-40"
-            >รีเซ็ต</button>
-          </div>
-        </div>
-
-        {/* ── คะแนน ── */}
-        <div>
-          <div className="mb-1.5 text-xs text-ink-500">ให้คะแนน (0–5)</div>
-          <div className="flex items-center gap-1">
-            {[0, 1, 2, 3, 4, 5].map((s) => (
-              <button key={s} onClick={() => onPatch({ score: s })}
-                className={`h-9 w-9 rounded-lg text-sm font-medium transition-colors ${
-                  Number(a.score) === s
-                    ? "bg-amber-500 text-white"
-                    : "bg-ink-100 text-ink-600 hover:bg-amber-100"
-                }`}>{s}</button>
-            ))}
-          </div>
-          {a.score != null && <div className="mt-1.5"><ScoreStars score={a.score} /></div>}
         </div>
       </div>
     </div>

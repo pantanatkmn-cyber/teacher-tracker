@@ -71,3 +71,13 @@ export async function PATCH(req, { params }) {
 
   return NextResponse.json({ error: "คำขอไม่ถูกต้อง" }, { status: 400 });
 }
+
+// DELETE: ลบ assignment (ถอดครูออกจากงาน)
+export async function DELETE(req, { params }) {
+  const session = await getSession();
+  if (!session || !["head", "admin"].includes(session.role)) {
+    return NextResponse.json({ error: "ไม่มีสิทธิ์" }, { status: 403 });
+  }
+  await sql`DELETE FROM task_assignments WHERE id = ${Number(params.id)}`;
+  return NextResponse.json({ ok: true });
+}

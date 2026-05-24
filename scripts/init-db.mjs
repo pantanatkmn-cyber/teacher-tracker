@@ -13,11 +13,17 @@ if (!process.env.DATABASE_URL) {
 const sql = neon(process.env.DATABASE_URL);
 const schema = readFileSync(join(__dirname, "../db/schema.sql"), "utf8");
 
-// แยกคำสั่งด้วย ; กรองบรรทัดว่างและ comment
+// แยกคำสั่งด้วย ; ลบ comment ก่อนแล้วค่อยกรองบรรทัดว่าง
 const statements = schema
   .split(";")
-  .map((s) => s.trim())
-  .filter((s) => s.length > 0 && !s.startsWith("--"));
+  .map((s) =>
+    s
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n")
+      .trim()
+  )
+  .filter((s) => s.length > 0);
 
 console.log(`📦 กำลังรัน ${statements.length} คำสั่ง SQL...`);
 for (const stmt of statements) {
