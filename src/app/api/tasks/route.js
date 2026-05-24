@@ -3,16 +3,18 @@ import { getSession } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
 // GET: รายการงาน
-//  - teacher: เห็นเฉพาะงานที่มอบหมายให้ตัวเอง
-//  - head/admin: เห็นงานทั้งหมดที่ตัวเองโพสต์ + ภาพรวม
 export async function GET(req) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "ไม่มีสิทธิ์" }, { status: 401 });
 
   if (session.role === "teacher") {
     const rows = await sql`
-      SELECT t.id, t.title, t.description, t.due_date, t.term, t.created_at,
-             a.id AS assignment_id, a.status, a.progress, a.score, a.score_note,
+      SELECT t.id, t.title, t.description,
+             t.start_date, t.end_date, t.due_date, t.term,
+             t.total_parts, t.attachment_url, t.attachment_name,
+             t.created_at,
+             a.id AS assignment_id, a.status, a.progress,
+             a.current_parts, a.score, a.score_note,
              a.submitted_at, u.full_name AS created_by_name
       FROM task_assignments a
       JOIN tasks t ON t.id = a.task_id
@@ -23,10 +25,12 @@ export async function GET(req) {
     return NextResponse.json({ tasks: rows });
   }
 
-  // head/admin: งานพร้อมจำนวนผู้รับและสถิติย่อ
+  // head/admin
   const rows = await sql`
-    SELECT t.id, t.title, t.description, t.due_date, t.term, t.created_at,
-           u.full_name AS created_by_name,
+    SELECT t.id, t.title, t.description,
+           t.start_date, t.end_date, t.due_date, t.term,
+           t.total_parts, t.attachment_url, t.attachment_name,
+           t.created_at, u.full_name AS created_by_name,
            COUNT(a.id)::int AS total,
            COUNT(*) FILTER (WHERE a.status='submitted')::int AS submitted,
            COUNT(*) FILTER (WHERE a.status='late')::int AS late,
@@ -41,7 +45,6 @@ export async function GET(req) {
 }
 
 // POST: โพสต์งานใหม่ (head/admin)
-// body: { title, description, due_date, term, target: 'all'|'some', teacher_ids: [] }
 export async function POST(req) {
   const session = await getSession();
   if (!session || !["head", "admin"].includes(session.role)) {
@@ -51,16 +54,24 @@ export async function POST(req) {
   const b = await req.json();
   if (!b.title) return NextResponse.json({ error: "กรอกชื่องาน" }, { status: 400 });
 
-  // สร้าง task
+  const totalParts = Math.max(1, parseInt(b.total_parts) || 1);
+
   const taskRows = await sql`
-    INSERT INTO tasks (title, description, created_by, due_date, term)
-    VALUES (${b.title}, ${b.description || null}, ${session.id},
-            ${b.due_date || null}, ${b.term || null})
+    INSERT INTO tasks (
+      title, description, created_by,
+      start_date, end_date, due_date, term,
+      total_parts, attachment_url, attachment_name
+    )
+    VALUES (
+      ${b.title}, ${b.description || null}, ${session.id},
+      ${b.start_date || null}, ${b.end_date || null}, ${b.end_date || null},
+      ${b.term || null},
+      ${totalParts}, ${b.attachment_url || null}, ${b.attachment_name || null}
+    )
     RETURNING id
   `;
   const taskId = taskRows[0].id;
 
-  // หาว่าจะมอบให้ใคร
   let teacherIds = [];
   if (b.target === "all") {
     const t = await sql`SELECT id FROM users WHERE role IN ('teacher','head') AND is_active = TRUE`;
@@ -69,7 +80,6 @@ export async function POST(req) {
     teacherIds = (b.teacher_ids || []).map(Number);
   }
 
-  // insert assignments
   for (const tid of teacherIds) {
     await sql`
       INSERT INTO task_assignments (task_id, teacher_id)

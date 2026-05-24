@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ProgressBar, StatusBadge, Avatar, ScoreStars } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 
@@ -36,7 +36,11 @@ export default function ManageTasks() {
       </div>
 
       {showForm && (
-        <NewTaskForm teachers={teachers} onClose={() => setShowForm(false)} onDone={() => { setShowForm(false); load(); }} />
+        <NewTaskForm
+          teachers={teachers}
+          onClose={() => setShowForm(false)}
+          onDone={() => { setShowForm(false); load(); }}
+        />
       )}
 
       <div className="space-y-4">
@@ -50,10 +54,26 @@ export default function ManageTasks() {
                 <div className="min-w-0 flex-1">
                   <h3 className="font-display text-lg font-semibold text-ink-900">{t.title}</h3>
                   {t.description && <p className="mt-1 text-sm text-ink-600">{t.description}</p>}
+
+                  {/* attachment */}
+                  {t.attachment_url && (
+                    <a
+                      href={t.attachment_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-100 transition-colors"
+                    >
+                      📎 {t.attachment_name || "เปิดไฟล์/ลิ้งค์"}
+                    </a>
+                  )}
+
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-400">
-                    {t.due_date && <span>กำหนดส่ง: {formatDate(t.due_date)}</span>}
+                    {t.start_date && <span>เริ่ม: {formatDate(t.start_date)}</span>}
+                    {t.end_date && <span>สิ้นสุด: {formatDate(t.end_date)}</span>}
+                    {!t.start_date && !t.end_date && t.due_date && <span>กำหนดส่ง: {formatDate(t.due_date)}</span>}
                     {t.term && <span>เทอม: {t.term}</span>}
                     <span>โพสต์: {formatDate(t.created_at)}</span>
+                    <span className="font-medium text-ink-600">จำนวนงาน: {t.total_parts} ส่วน</span>
                   </div>
                 </div>
                 <button onClick={() => deleteTask(t.id)} className="text-xs text-rose-500 hover:underline">ลบ</button>
@@ -68,12 +88,15 @@ export default function ManageTasks() {
 
               <button
                 onClick={() => setExpanded(expanded === t.id ? null : t.id)}
-                className="mt-3 text-sm text-brand-600 hover:underline">
+                className="mt-3 text-sm text-brand-600 hover:underline"
+              >
                 {expanded === t.id ? "ซ่อนรายชื่อ ▲" : "จัดการรายบุคคล ▼"}
               </button>
             </div>
 
-            {expanded === t.id && <TaskAssignments taskId={t.id} onChange={load} />}
+            {expanded === t.id && (
+              <TaskAssignments taskId={t.id} totalParts={t.total_parts || 1} onChange={load} />
+            )}
           </div>
         ))}
       </div>
@@ -81,66 +104,194 @@ export default function ManageTasks() {
   );
 }
 
-// ---------- ฟอร์มโพสต์งานใหม่ ----------
+/* ───────────── ฟอร์มโพสต์งานใหม่ ───────────── */
 function NewTaskForm({ teachers, onClose, onDone }) {
-  const [f, setF] = useState({ title: "", description: "", due_date: "", term: "", target: "all" });
+  const [f, setF] = useState({
+    title: "", description: "",
+    start_date: "", end_date: "",
+    term: "1/2568",
+    total_parts: 1,
+    target: "all",
+    attach_type: "none", // "none" | "url" | "file"
+    attachment_url: "",
+    attachment_name: "",
+  });
   const [selected, setSelected] = useState([]);
   const [saving, setSaving] = useState(false);
+  const fileRef = useRef();
 
   function toggle(id) {
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   }
 
+  function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setF((prev) => ({
+        ...prev,
+        attachment_url: ev.target.result,
+        attachment_name: file.name,
+      }));
+    };
+    reader.readAsDataURL(file);
+  }
+
   async function save() {
     setSaving(true);
+    const body = {
+      title: f.title,
+      description: f.description,
+      start_date: f.start_date || undefined,
+      end_date: f.end_date || undefined,
+      term: f.term,
+      total_parts: Number(f.total_parts),
+      target: f.target,
+      teacher_ids: f.target === "some" ? selected : undefined,
+      attachment_url: f.attach_type !== "none" ? f.attachment_url || undefined : undefined,
+      attachment_name: f.attach_type !== "none" ? f.attachment_name || undefined : undefined,
+    };
     await fetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...f,
-        teacher_ids: f.target === "some" ? selected : undefined,
-      }),
+      body: JSON.stringify(body),
     });
     onDone();
   }
 
+  const canSave = f.title.trim() &&
+    (f.target === "all" || selected.length > 0) &&
+    (f.attach_type === "none" || f.attachment_url);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="card max-h-[90vh] w-full max-w-lg overflow-y-auto p-6">
+      <div className="card max-h-[92vh] w-full max-w-lg overflow-y-auto p-6">
         <h2 className="font-display text-xl font-bold text-ink-900">โพสต์งานใหม่</h2>
+
         <div className="mt-4 space-y-4">
+          {/* ชื่องาน */}
           <div>
             <label className="label">ชื่องาน *</label>
-            <input className="input" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })}
+            <input className="input" value={f.title}
+              onChange={(e) => setF({ ...f, title: e.target.value })}
               placeholder="เช่น ส่งแผนการสอนภาคเรียนที่ 1" />
           </div>
+
+          {/* รายละเอียด */}
           <div>
             <label className="label">รายละเอียด</label>
             <textarea className="input" rows={3} value={f.description}
-              onChange={(e) => setF({ ...f, description: e.target.value })} />
+              onChange={(e) => setF({ ...f, description: e.target.value })}
+              placeholder="คำอธิบายเพิ่มเติม (ถ้ามี)" />
           </div>
+
+          {/* วันที่เริ่ม - วันที่สิ้นสุด */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label">กำหนดส่ง</label>
-              <input type="date" className="input" value={f.due_date}
-                onChange={(e) => setF({ ...f, due_date: e.target.value })} />
+              <label className="label">วันที่เริ่ม</label>
+              <input type="date" className="input" value={f.start_date}
+                onChange={(e) => setF({ ...f, start_date: e.target.value })} />
             </div>
+            <div>
+              <label className="label">วันที่สิ้นสุด</label>
+              <input type="date" className="input" value={f.end_date}
+                min={f.start_date}
+                onChange={(e) => setF({ ...f, end_date: e.target.value })} />
+            </div>
+          </div>
+
+          {/* เทอม + จำนวนส่วน */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">เทอม</label>
               <input className="input" value={f.term} placeholder="1/2568"
                 onChange={(e) => setF({ ...f, term: e.target.value })} />
             </div>
+            <div>
+              <label className="label">จำนวนงานทั้งหมด (ส่วน)</label>
+              <input type="number" min={1} max={999} className="input" value={f.total_parts}
+                onChange={(e) => setF({ ...f, total_parts: Math.max(1, parseInt(e.target.value) || 1) })} />
+            </div>
           </div>
 
+          {/* แนบไฟล์ / ลิ้งค์ */}
+          <div>
+            <label className="label">แนบไฟล์หรือลิ้งค์</label>
+            <div className="flex gap-2">
+              {["none", "url", "file"].map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setF({ ...f, attach_type: t, attachment_url: "", attachment_name: "" })}
+                  className={`flex-1 rounded-xl border px-3 py-2 text-sm transition-colors ${
+                    f.attach_type === t
+                      ? "border-brand-500 bg-brand-50 text-brand-700"
+                      : "border-ink-200 text-ink-600 hover:bg-ink-50"
+                  }`}
+                >
+                  {t === "none" ? "ไม่มี" : t === "url" ? "🔗 ลิ้งค์" : "📄 PDF"}
+                </button>
+              ))}
+            </div>
+
+            {f.attach_type === "url" && (
+              <div className="mt-2">
+                <input
+                  className="input"
+                  placeholder="https://drive.google.com/..."
+                  value={f.attachment_url}
+                  onChange={(e) => setF({
+                    ...f,
+                    attachment_url: e.target.value,
+                    attachment_name: f.attachment_name || e.target.value.split("/").pop() || "ลิ้งค์",
+                  })}
+                />
+                <input
+                  className="input mt-2"
+                  placeholder="ชื่อที่แสดง (เช่น เอกสารแนบ)"
+                  value={f.attachment_name}
+                  onChange={(e) => setF({ ...f, attachment_name: e.target.value })}
+                />
+              </div>
+            )}
+
+            {f.attach_type === "file" && (
+              <div className="mt-2">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="application/pdf"
+                  className="hidden"
+                  onChange={handleFile}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="w-full rounded-xl border-2 border-dashed border-ink-200 py-4 text-sm text-ink-500 hover:border-brand-400 hover:text-brand-600 transition-colors"
+                >
+                  {f.attachment_name
+                    ? <span className="flex items-center justify-center gap-2">📄 <span className="font-medium text-ink-800">{f.attachment_name}</span></span>
+                    : "คลิกเพื่อเลือกไฟล์ PDF"}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* มอบหมายให้ */}
           <div>
             <label className="label">มอบหมายให้</label>
             <div className="flex gap-2">
               <button type="button" onClick={() => setF({ ...f, target: "all" })}
-                className={`flex-1 rounded-xl border px-3 py-2 text-sm ${f.target === "all" ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200"}`}>
+                className={`flex-1 rounded-xl border px-3 py-2 text-sm transition-colors ${
+                  f.target === "all" ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 hover:bg-ink-50"
+                }`}>
                 ทุกคน
               </button>
               <button type="button" onClick={() => setF({ ...f, target: "some" })}
-                className={`flex-1 rounded-xl border px-3 py-2 text-sm ${f.target === "some" ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200"}`}>
+                className={`flex-1 rounded-xl border px-3 py-2 text-sm transition-colors ${
+                  f.target === "some" ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 hover:bg-ink-50"
+                }`}>
                 เลือกรายคน
               </button>
             </div>
@@ -149,7 +300,7 @@ function NewTaskForm({ teachers, onClose, onDone }) {
           {f.target === "some" && (
             <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-ink-200 p-2">
               {teachers.map((t) => (
-                <label key={t.id} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-ink-50">
+                <label key={t.id} className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 hover:bg-ink-50">
                   <input type="checkbox" checked={selected.includes(t.id)} onChange={() => toggle(t.id)}
                     className="h-4 w-4 rounded accent-brand-600" />
                   <Avatar name={t.full_name} color={t.avatar_color} size={7} />
@@ -162,8 +313,7 @@ function NewTaskForm({ teachers, onClose, onDone }) {
 
         <div className="mt-6 flex justify-end gap-2">
           <button onClick={onClose} className="btn-ghost">ยกเลิก</button>
-          <button onClick={save} disabled={saving || !f.title || (f.target === "some" && selected.length === 0)}
-            className="btn-primary">
+          <button onClick={save} disabled={saving || !canSave} className="btn-primary">
             {saving ? "กำลังบันทึก..." : "โพสต์งาน"}
           </button>
         </div>
@@ -172,8 +322,8 @@ function NewTaskForm({ teachers, onClose, onDone }) {
   );
 }
 
-// ---------- รายชื่อผู้รับมอบหมาย + จัดการ ----------
-function TaskAssignments({ taskId, onChange }) {
+/* ───────────── รายชื่อผู้รับมอบหมาย + slider progress ───────────── */
+function TaskAssignments({ taskId, totalParts, onChange }) {
   const [assignments, setAssignments] = useState([]);
 
   async function load() {
@@ -195,48 +345,104 @@ function TaskAssignments({ taskId, onChange }) {
     <div className="border-t border-ink-100 bg-ink-50/50 p-5">
       <div className="space-y-3">
         {assignments.map((a) => (
-          <div key={a.id} className="card p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <Avatar name={a.full_name} color={a.avatar_color} />
-              <div className="min-w-0 flex-1">
-                <div className="font-medium text-ink-900">{a.full_name}</div>
-                <StatusBadge status={a.status} />
-              </div>
-            </div>
-
-            <div className="mt-3 grid gap-4 sm:grid-cols-2">
-              {/* progression */}
-              <div>
-                <div className="mb-1.5 flex items-center justify-between text-xs text-ink-500">
-                  <span>ความคืบหน้า</span><span className="font-medium">{a.progress}%</span>
-                </div>
-                <ProgressBar value={a.progress} />
-                <div className="mt-2 flex gap-1.5">
-                  <button onClick={() => patch(a.id, { progress: a.progress - 10 })}
-                    className="rounded-lg bg-ink-100 px-3 py-1 text-sm hover:bg-ink-200">−10</button>
-                  <button onClick={() => patch(a.id, { progress: a.progress + 10 })}
-                    className="rounded-lg bg-brand-100 px-3 py-1 text-sm text-brand-700 hover:bg-brand-200">+10</button>
-                  <button onClick={() => patch(a.id, { progress: 100 })}
-                    className="rounded-lg bg-emerald-100 px-3 py-1 text-sm text-emerald-700 hover:bg-emerald-200">ครบ</button>
-                </div>
-              </div>
-
-              {/* คะแนน */}
-              <div>
-                <div className="mb-1.5 text-xs text-ink-500">ให้คะแนน (0–5)</div>
-                <div className="flex items-center gap-1">
-                  {[0, 1, 2, 3, 4, 5].map((s) => (
-                    <button key={s} onClick={() => patch(a.id, { score: s })}
-                      className={`h-9 w-9 rounded-lg text-sm font-medium transition-colors ${
-                        Number(a.score) === s ? "bg-amber-500 text-white" : "bg-ink-100 text-ink-600 hover:bg-amber-100"
-                      }`}>{s}</button>
-                  ))}
-                </div>
-                {a.score != null && <div className="mt-1.5"><ScoreStars score={a.score} /></div>}
-              </div>
-            </div>
-          </div>
+          <AssignmentCard
+            key={a.id}
+            a={a}
+            totalParts={totalParts}
+            onPatch={(body) => patch(a.id, body)}
+          />
         ))}
+      </div>
+    </div>
+  );
+}
+
+function AssignmentCard({ a, totalParts, onPatch }) {
+  const current = a.current_parts ?? Math.round((a.progress / 100) * totalParts);
+  const pct = totalParts > 0 ? Math.round((current / totalParts) * 100) : 0;
+
+  function handleSlider(e) {
+    onPatch({ current_parts: Number(e.target.value) });
+  }
+
+  return (
+    <div className="card p-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <Avatar name={a.full_name} color={a.avatar_color} />
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-ink-900">{a.full_name}</div>
+          <StatusBadge status={a.status} />
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        {/* ── Progress slider ── */}
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs text-ink-500">ความคืบหน้า</span>
+            <span className="text-sm font-semibold text-ink-800">
+              {current}
+              <span className="text-xs font-normal text-ink-400">/{totalParts}</span>
+              <span className="ml-2 text-xs text-ink-400">({pct}%)</span>
+            </span>
+          </div>
+
+          {/* track + fill */}
+          <div className="relative mb-3">
+            <ProgressBar value={pct} />
+          </div>
+
+          {/* slider */}
+          <input
+            type="range"
+            min={0}
+            max={totalParts}
+            value={current}
+            onChange={handleSlider}
+            className="slider-thumb w-full cursor-pointer accent-brand-600"
+            style={{ accentColor: "#3361f6" }}
+          />
+
+          {/* quick buttons */}
+          <div className="mt-2 flex gap-1.5">
+            <button
+              onClick={() => onPatch({ current_parts: Math.max(0, current - 1) })}
+              disabled={current === 0}
+              className="rounded-lg bg-ink-100 px-3 py-1 text-sm hover:bg-ink-200 disabled:opacity-40"
+            >−1</button>
+            <button
+              onClick={() => onPatch({ current_parts: Math.min(totalParts, current + 1) })}
+              disabled={current === totalParts}
+              className="rounded-lg bg-brand-100 px-3 py-1 text-sm text-brand-700 hover:bg-brand-200 disabled:opacity-40"
+            >+1</button>
+            <button
+              onClick={() => onPatch({ current_parts: totalParts })}
+              disabled={current === totalParts}
+              className="rounded-lg bg-emerald-100 px-3 py-1 text-sm text-emerald-700 hover:bg-emerald-200 disabled:opacity-40"
+            >ครบ ✓</button>
+            <button
+              onClick={() => onPatch({ current_parts: 0 })}
+              disabled={current === 0}
+              className="ml-auto rounded-lg bg-ink-50 px-2 py-1 text-xs text-ink-400 hover:bg-ink-100 disabled:opacity-40"
+            >รีเซ็ต</button>
+          </div>
+        </div>
+
+        {/* ── คะแนน ── */}
+        <div>
+          <div className="mb-1.5 text-xs text-ink-500">ให้คะแนน (0–5)</div>
+          <div className="flex items-center gap-1">
+            {[0, 1, 2, 3, 4, 5].map((s) => (
+              <button key={s} onClick={() => onPatch({ score: s })}
+                className={`h-9 w-9 rounded-lg text-sm font-medium transition-colors ${
+                  Number(a.score) === s
+                    ? "bg-amber-500 text-white"
+                    : "bg-ink-100 text-ink-600 hover:bg-amber-100"
+                }`}>{s}</button>
+            ))}
+          </div>
+          {a.score != null && <div className="mt-1.5"><ScoreStars score={a.score} /></div>}
+        </div>
       </div>
     </div>
   );
