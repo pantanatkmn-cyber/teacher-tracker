@@ -6,6 +6,17 @@ export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "ไม่มีสิทธิ์" }, { status: 401 });
 
+  // ── การประชุม (ทุก role เห็นได้เหมือนกัน) ──
+  const meetings = await sql`
+    SELECT id, title, description, meeting_date AS start_date,
+           COALESCE(end_date, meeting_date) AS end_date,
+           location, attachment_url, attachment_name, created_at
+    FROM meetings
+    ORDER BY meeting_date
+  `;
+  const meetingEvents = meetings.map((m) => ({ ...m, _type: "meeting" }));
+
+  // ── งาน ──
   if (session.role === "teacher") {
     const tasks = await sql`
       SELECT t.id, t.title, t.description,
@@ -19,10 +30,11 @@ export async function GET() {
       WHERE a.teacher_id = ${session.id}
       ORDER BY COALESCE(t.end_date, t.due_date, t.created_at::date)
     `;
-    return NextResponse.json({ tasks, role: "teacher" });
+    const taskEvents = tasks.map((t) => ({ ...t, _type: "task" }));
+    return NextResponse.json({ tasks: taskEvents, meetings: meetingEvents, role: "teacher" });
   }
 
-  // head / admin: เห็นทุกงาน
+  // head / admin
   const tasks = await sql`
     SELECT t.id, t.title, t.description,
            t.start_date, t.end_date, t.due_date,
@@ -37,5 +49,6 @@ export async function GET() {
     GROUP BY t.id
     ORDER BY COALESCE(t.end_date, t.due_date, t.created_at::date)
   `;
-  return NextResponse.json({ tasks, role: session.role });
+  const taskEvents = tasks.map((t) => ({ ...t, _type: "task" }));
+  return NextResponse.json({ tasks: taskEvents, meetings: meetingEvents, role: session.role });
 }

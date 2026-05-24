@@ -3,10 +3,11 @@ import { redirect } from "next/navigation";
 import Shell from "@/components/Shell";
 
 const NAV = [
-  { href: "/dashboard", label: "ปฏิทินงาน", icon: "📅" },
-  { href: "/dashboard/tasks", label: "จัดการงาน", icon: "📋" },
-  { href: "/dashboard/schedules", label: "ตารางสอน", icon: "🗓" },
-  { href: "/dashboard/stats", label: "สถิติรายบุคคล", icon: "📈" },
+  { href: "/dashboard",          label: "ปฏิทินงาน",     icon: "📅" },
+  { href: "/dashboard/tasks",    label: "จัดการงาน",     icon: "📋" },
+  { href: "/dashboard/meetings", label: "ประชุมแผนก",    icon: "🗣" },
+  { href: "/dashboard/schedules",label: "ตารางสอน",      icon: "🗓" },
+  { href: "/dashboard/stats",    label: "สถิติรายบุคคล", icon: "📈" },
 ];
 
 export default async function DashboardLayout({ children }) {
